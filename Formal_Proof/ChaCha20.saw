@@ -1,0 +1,156 @@
+// ----------------------------------------------------------------------
+// SAW script for ChaCha20 C vs Cryptol test-vector verification
+// ----------------------------------------------------------------------
+
+m <- llvm_load_module "chacha20.bc";
+
+import "ChaCha20.cry";
+
+// ----------------------------------------------------------------------
+// Helper
+// ----------------------------------------------------------------------
+
+let alloc_init ty v = do {
+  p <- llvm_alloc ty;
+  llvm_points_to p v;
+  return p;
+};
+
+// ----------------------------------------------------------------------
+// Test vector
+// ----------------------------------------------------------------------
+
+let key =
+  llvm_term {{
+    [ 0x2b, 0x7e, 0x15, 0x16
+    , 0x28, 0xae, 0xd2, 0xa6
+    , 0xab, 0xf7, 0x15, 0x88
+    , 0x09, 0xcf, 0x4f, 0x3c
+    , 0x76, 0x2e, 0x71, 0x60
+    , 0xf3, 0x8b, 0x4d, 0xa5
+    , 0x6a, 0x78, 0x4d, 0x90
+    , 0x45, 0x19, 0x0c, 0xfe
+    ] : [32][8]
+  }};
+
+let nonce =
+  llvm_term {{
+    [ 0x00, 0x00, 0x00, 0x00
+    , 0x00, 0x00, 0x00, 0x4a
+    , 0x00, 0x00, 0x00, 0x00
+    ] : [12][8]
+  }};
+
+let plaintext =
+  llvm_term {{
+    [ 0x31, 0x32, 0x33, 0x34, 0x35
+    , 0x36, 0x37, 0x38, 0x39, 0x30
+    ] : [10][8]
+  }};
+
+let ciphertext =
+  llvm_term {{
+    [ 0x0b, 0xd6, 0xd5, 0xb3, 0x8b
+    , 0x36, 0xd7, 0x4d, 0xb3, 0x86
+    ] : [10][8]
+  }};
+
+let zero10 =
+  llvm_term {{
+    [ 0x00, 0x00, 0x00, 0x00, 0x00
+    , 0x00, 0x00, 0x00, 0x00, 0x00
+    ] : [10][8]
+  }};
+
+// 注意：这里不能写 ChaCha20::chacha20Encrypt
+// 当前 SAW 环境下直接使用 chacha20Encrypt
+let expected_ciphertext =
+  llvm_term {{
+    chacha20Encrypt
+      ([ 0x2b, 0x7e, 0x15, 0x16
+       , 0x28, 0xae, 0xd2, 0xa6
+       , 0xab, 0xf7, 0x15, 0x88
+       , 0x09, 0xcf, 0x4f, 0x3c
+       , 0x76, 0x2e, 0x71, 0x60
+       , 0xf3, 0x8b, 0x4d, 0xa5
+       , 0x6a, 0x78, 0x4d, 0x90
+       , 0x45, 0x19, 0x0c, 0xfe
+       ] : [32][8])
+      (0x00000000 : [32])
+      ([ 0x00, 0x00, 0x00, 0x00
+       , 0x00, 0x00, 0x00, 0x4a
+       , 0x00, 0x00, 0x00, 0x00
+       ] : [12][8])
+      ([ 0x31, 0x32, 0x33, 0x34, 0x35
+       , 0x36, 0x37, 0x38, 0x39, 0x30
+       ] : [10][8])
+  }};
+
+// ----------------------------------------------------------------------
+// Encrypt specification
+//
+// C signature:
+//
+// void chacha20_encrypt(const uint8_t key[32],
+//                       uint32_t counter,
+//                       const uint8_t nonce[12],
+//                       const uint8_t *plaintext,
+//                       size_t plaintext_len,
+//                       uint8_t *ciphertext);
+// ----------------------------------------------------------------------
+
+let chacha20_encrypt_test_spec = do {
+  key_ptr        <- alloc_init (llvm_array 32 (llvm_int 8)) key;
+  nonce_ptr      <- alloc_init (llvm_array 12 (llvm_int 8)) nonce;
+  plaintext_ptr  <- alloc_init (llvm_array 10 (llvm_int 8)) plaintext;
+  ciphertext_ptr <- alloc_init (llvm_array 10 (llvm_int 8)) zero10;
+
+  llvm_execute_func
+    [ key_ptr
+    , llvm_term {{ 0x00000000 : [32] }}
+    , nonce_ptr
+    , plaintext_ptr
+    , llvm_term {{ 10 : [64] }}
+    , ciphertext_ptr
+    ];
+
+  llvm_points_to ciphertext_ptr expected_ciphertext;
+};
+
+// ----------------------------------------------------------------------
+// Decrypt specification
+//
+// C signature:
+//
+// void chacha20_decrypt(const uint8_t key[32],
+//                       uint32_t counter,
+//                       const uint8_t nonce[12],
+//                       const uint8_t *ciphertext,
+//                       size_t ciphertext_len,
+//                       uint8_t *plaintext);
+// ----------------------------------------------------------------------
+
+let chacha20_decrypt_test_spec = do {
+  key_ptr        <- alloc_init (llvm_array 32 (llvm_int 8)) key;
+  nonce_ptr      <- alloc_init (llvm_array 12 (llvm_int 8)) nonce;
+  ciphertext_ptr <- alloc_init (llvm_array 10 (llvm_int 8)) ciphertext;
+  plaintext_ptr  <- alloc_init (llvm_array 10 (llvm_int 8)) zero10;
+
+  llvm_execute_func
+    [ key_ptr
+    , llvm_term {{ 0x00000000 : [32] }}
+    , nonce_ptr
+    , ciphertext_ptr
+    , llvm_term {{ 10 : [64] }}
+    , plaintext_ptr
+    ];
+
+  llvm_points_to plaintext_ptr plaintext;
+};
+
+// ----------------------------------------------------------------------
+// Run verification
+// ----------------------------------------------------------------------
+
+llvm_verify m "chacha20_encrypt" [] false chacha20_encrypt_test_spec z3;
+llvm_verify m "chacha20_decrypt" [] false chacha20_decrypt_test_spec z3;
