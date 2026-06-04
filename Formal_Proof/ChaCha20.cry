@@ -4,9 +4,7 @@ type Byte   = [8]
 type Word32 = [32]
 type State  = [16]Word32
 
-// ----------------------------------------------------------------------
 // Little-endian conversion
-// ----------------------------------------------------------------------
 
 bytesToWord32 : [4]Byte -> Word32
 bytesToWord32 bs = bs @ 3 # bs @ 2 # bs @ 1 # bs @ 0
@@ -28,9 +26,7 @@ nonceWords nonce =
   where
     chunks = split nonce : [3][4]Byte
 
-// ----------------------------------------------------------------------
 // ChaCha20 constants: "expand 32-byte k"
-// ----------------------------------------------------------------------
 
 constants : [4]Word32
 constants =
@@ -40,9 +36,7 @@ constants =
   , 0x6b206574
   ]
 
-// ----------------------------------------------------------------------
 // Quarter Round
-// ----------------------------------------------------------------------
 
 quarterRound : (Word32, Word32, Word32, Word32)
             -> (Word32, Word32, Word32, Word32)
@@ -65,9 +59,7 @@ quarterRound (a0, b0, c0, d0) = (a4, b4, c4, d4)
     c4 = c2
     d4 = d2
 
-// ----------------------------------------------------------------------
 // Column round
-// ----------------------------------------------------------------------
 
 columnRound : State -> State
 columnRound s =
@@ -82,9 +74,7 @@ columnRound s =
     (x2, x6, x10, x14) = quarterRound (s @ 2, s @ 6, s @ 10, s @ 14)
     (x3, x7, x11, x15) = quarterRound (s @ 3, s @ 7, s @ 11, s @ 15)
 
-// ----------------------------------------------------------------------
 // Diagonal round
-// ----------------------------------------------------------------------
 
 diagonalRound : State -> State
 diagonalRound s =
@@ -99,9 +89,7 @@ diagonalRound s =
     (x2, x7, x8,  x13) = quarterRound (s @ 2, s @ 7, s @ 8,  s @ 13)
     (x3, x4, x9,  x14) = quarterRound (s @ 3, s @ 4, s @ 9,  s @ 14)
 
-// ----------------------------------------------------------------------
 // 20 rounds = 10 double rounds
-// ----------------------------------------------------------------------
 
 doubleRound : State -> State
 doubleRound s = diagonalRound (columnRound s)
@@ -120,14 +108,12 @@ twentyRounds s0 = s10
     s9  = doubleRound s8
     s10 = doubleRound s9
 
-// ----------------------------------------------------------------------
 // Initial ChaCha20 state
 //
 // state[0..3]   = constants
 // state[4..11]  = key words
 // state[12]     = counter
 // state[13..15] = nonce words
-// ----------------------------------------------------------------------
 
 initialState : [32]Byte -> Word32 -> [12]Byte -> State
 initialState key counter nonce =
@@ -137,10 +123,8 @@ serializeState : State -> [64]Byte
 serializeState s =
   join [ word32ToBytes (s @ i) | i <- [0 .. 15] ]
 
-// ----------------------------------------------------------------------
 // ChaCha20 block function
 // Produces one 64-byte keystream block
-// ----------------------------------------------------------------------
 
 chacha20Block : [32]Byte -> Word32 -> [12]Byte -> [64]Byte
 chacha20Block key counter nonce =
@@ -150,12 +134,10 @@ chacha20Block key counter nonce =
     working = twentyRounds init
     final   = [ init @ i + working @ i | i <- [0 .. 15] ]
 
-// ----------------------------------------------------------------------
 // Keystream generation
 //
 // n is the message length in bytes.
 // counter is increased every 64 bytes.
-// ----------------------------------------------------------------------
 
 chacha20Keystream : {n} (fin n, n >= 1) =>
                     [32]Byte -> Word32 -> [12]Byte -> [n]Byte
@@ -164,11 +146,9 @@ chacha20Keystream key counter nonce =
   | i <- [0 .. n - 1]
   ]
 
-// ----------------------------------------------------------------------
 // Encryption / decryption
 //
 // ChaCha20 is a stream cipher, so encryption and decryption are identical.
-// ----------------------------------------------------------------------
 
 chacha20Encrypt : {n} (fin n, n >= 1) =>
                   [32]Byte -> Word32 -> [12]Byte -> [n]Byte -> [n]Byte
@@ -183,9 +163,7 @@ chacha20Decrypt : {n} (fin n, n >= 1) =>
 chacha20Decrypt key counter nonce ciphertext =
   chacha20Encrypt key counter nonce ciphertext
 
-// ----------------------------------------------------------------------
 // Correctness properties
-// ----------------------------------------------------------------------
 
 decryptAfterEncrypt :
   {n} (fin n, n >= 1) =>
@@ -202,7 +180,6 @@ property encryptAfterDecrypt key counter nonce ciphertext =
     (chacha20Decrypt key counter nonce ciphertext) == ciphertext
 
 
-// ----------------------------------------------------------------------
 // Test Vector
 // Key:
 // 2b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfe
@@ -218,7 +195,6 @@ property encryptAfterDecrypt key counter nonce ciphertext =
 //
 // Expected Ciphertext:
 // 0bd6d5b38b36d74db386
-// ----------------------------------------------------------------------
 
 testKey : [32]Byte
 testKey =
